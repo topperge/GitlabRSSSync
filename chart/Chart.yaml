@@ -1,0 +1,17 @@
+apiVersion: v2
+name: gitlab-rss-sync
+description: A Helm chart for GitlabRSSSync - an application that syncs RSS feeds to GitLab issues
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - gitlab
+  - rss
+  - sync
+maintainers:
+  - name: GitlabRSSSync Team
+dependencies:
+  - name: redis
+    version: "~16.0.0"
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled

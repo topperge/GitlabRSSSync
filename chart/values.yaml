@@ -1,0 +1,64 @@
+replicaCount: 1
+
+image:
+  repository: ${CI_REGISTRY_IMAGE}
+  tag: ${CI_COMMIT_REF_SLUG}
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+  internalPort: 8080
+
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: nginx
+  hosts:
+    - host: ${CI_PROJECT_PATH_SLUG}.${KUBE_INGRESS_BASE_DOMAIN}
+      paths: ["/"]
+
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+# Application-specific configuration
+env:
+  GITLAB_API_BASE_URL: "https://gitlab.com/api/v4"
+  # GITLAB_API_TOKEN will be set from CI/CD variables
+  CONFIG_DIR: "/app/config"
+  # Redis settings - use internal Redis service
+  REDIS_URL: "${APP_NAME}-redis:6379"
+  REDIS_PASSWORD: ""
+
+# Redis dependency
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+  master:
+    persistence:
+      enabled: true
+      size: 1Gi
+
+# Persistence for configuration
+persistence:
+  enabled: true
+  accessMode: ReadWriteOnce
+  size: 1Gi
+  mountPath: /app/config
+  
+# Secret containing sensitive information
+secrets:
+  enabled: true
+  items:
+    - key: GITLAB_API_TOKEN
+      path: env/gitlab-token

@@ -1,0 +1,141 @@
+image: golang:1.22
+
+stages:
+  - test
+  - build
+  - review
+  - deploy
+
+variables:
+  # Use the GitLab registry to store Docker images
+  DOCKER_REGISTRY: ${CI_REGISTRY}
+  DOCKER_IMAGE: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_REF_SLUG}
+  # Go environment variables
+  GOPATH: $CI_PROJECT_DIR/.go
+  GOCACHE: $CI_PROJECT_DIR/.go/cache
+  GO111MODULE: "on"
+  # Configure test database
+  TEST_REDIS_URL: redis:6379
+  TEST_REDIS_PASSWORD: ""
+  # Skip integration tests by default in CI
+  SKIP_INTEGRATION_TESTS: "true"
+
+# Cache dependencies between builds
+cache:
+  paths:
+    - .go/pkg/mod/
+    - .go/cache/
+
+# Default settings for all jobs
+default:
+  # Retry failed jobs up to 2 times
+  retry: 2
+  interruptible: true
+
+# Run tests with code coverage
+test:
+  stage: test
+  services:
+    - redis:latest
+  script:
+    - go mod download
+    - go test -v -race -coverprofile=coverage.out ./...
+    - go tool cover -func=coverage.out
+  coverage: '/total:\s+\(statements\)\s+(\d+\.\d+)%/'
+  artifacts:
+    paths:
+      - coverage.out
+    expire_in: 1 week
+
+# Check code formatting and lint
+lint:
+  stage: test
+  script:
+    - go mod download
+    - go fmt ./...
+    - go vet ./...
+    # Install and run golangci-lint
+    - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+    - golangci-lint run --out-format=line-number
+
+# Build and package the application
+build:
+  stage: build
+  script:
+    - go mod download
+    - CGO_ENABLED=0 go build -a -ldflags="-w -s" -o rss_sync
+    # Build Docker image
+    - docker build -t $DOCKER_IMAGE .
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker push $DOCKER_IMAGE
+  artifacts:
+    paths:
+      - rss_sync
+    expire_in: 1 week
+
+# AutoDevOps review deploy
+review:
+  stage: review
+  extends: .auto-deploy
+  script:
+    - auto-deploy check_kube_domain
+    - auto-deploy download_chart
+    - auto-deploy deploy
+  environment:
+    name: review/$CI_COMMIT_REF_NAME
+    url: http://$CI_PROJECT_PATH_SLUG-$CI_COMMIT_REF_SLUG.$KUBE_INGRESS_BASE_DOMAIN
+    on_stop: stop_review
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"'
+      when: never
+    - if: '$REVIEW_DISABLED'
+      when: never
+    - if: '$CI_COMMIT_BRANCH'
+
+# Stop review app
+stop_review:
+  stage: review
+  extends: .auto-deploy
+  script:
+    - auto-deploy initialize_tiller
+    - auto-deploy delete
+  environment:
+    name: review/$CI_COMMIT_REF_NAME
+    action: stop
+  needs:
+    - review
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"'
+      when: never
+    - if: '$REVIEW_DISABLED'
+      when: never
+    - if: '$CI_COMMIT_BRANCH'
+      when: manual
+
+# Deploy to production
+production:
+  stage: deploy
+  extends: .auto-deploy
+  script:
+    - auto-deploy check_kube_domain
+    - auto-deploy download_chart
+    - auto-deploy deploy
+  environment:
+    name: production
+    url: http://$CI_PROJECT_PATH_SLUG.$KUBE_INGRESS_BASE_DOMAIN
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"'
+      when: manual
+
+# Template for auto-deploy jobs
+.auto-deploy:
+  image: "registry.gitlab.com/gitlab-org/cluster-integration/auto-deploy-image:latest"
+  dependencies: []
+  variables:
+    # Default values used by auto-deploy plugin
+    AUTO_DEVOPS_DOMAIN: $KUBE_INGRESS_BASE_DOMAIN
+    AUTO_DEVOPS_CHART: gitlab/auto-deploy-app
+    AUTO_DEVOPS_KUBERNETES_NAMESPACE: $KUBE_NAMESPACE
+    AUTO_DEVOPS_PLATFORM_TARGET: kubernetes
+    AUTO_DEVOPS_DEPLOY_DEBUG: "true"
+    AUTO_DEVOPS_ENVIRONMENT_SCOPE: "*"

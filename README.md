@@ -1,97 +1,152 @@
-# Gitlab RSS Sync
-![Docker Cloud Build Status](https://img.shields.io/docker/cloud/build/mintel/gitlab-rss-sync.svg)
-![Docker Pulls](https://img.shields.io/docker/pulls/mintel/gitlab-rss-sync.svg)
+# GitlabRSSSync
 
-Create Gitlab issues from RSS Feeds with optional labelling.  Created to monitor RSS feeds and bring posts to
-our attention (Security Releases, Product Updates etc)
+An application that syncs RSS feeds to GitLab issues. It monitors RSS feeds and creates GitLab issues for new items, making it easy to track updates from various sources directly in your GitLab workflow.
 
-## Avoiding Duplication
-We try to be as clever as is reasonably possible in terms of not duplicating RSS feed items into Gitlab.
-A Redis database is used to store the GUID/FeedID combination which is checked when assessing articles for synchronisation.
-In addition we also add the RSS feed's item GUID at the bottom of the issue description.  Before synchronising an RSS item
-we run an issue search in the associated project, if we dont find the GUID in any issue we assume its not already been created.
-This helps to guard against scenarios where you lose the Redis database and dont want RSS items reduplicating into Gitlab.
-If found in Gitlab it is marked as synchronised in the Redis database as well as printing an link to the existing issue(s) to stdout.
+![GitLabRSSSync Architecture](screenshots/GKEReleaseNotes.png)
 
-## Limiting what is initially synced.
-Each feed entry in the config file can have an "added_since" property set.  This is used to only sync RSS items that have a
-Published/Updated date greater than the provided value.  This can be useful on RSS feeds where you dont want to import historic items,
-just new posts going forward.
+## Overview
 
-## Config file
+GitlabRSSSync solves the problem of keeping track of updates from multiple RSS sources by:
+- Monitoring configured RSS feeds at regular intervals
+- Checking for new entries against a Redis database
+- Creating GitLab issues for new items with appropriate labels
+- Supporting retroactive issue creation with preserved timestamps
 
-The config file **MUST** be named config.yaml, an example one is provided [here](config.yaml.example).  Below is a brief
- description of its contents.
+Key features:
+- Multiple feed support with per-feed configuration
+- Intelligent duplicate detection
+- Redis-based state tracking
+- Prometheus metrics for monitoring
+- Health check endpoint for Kubernetes deployments
+- Redis Sentinel support for high availability
 
-```yaml
-interval: 300
-feeds:
-  - id: test 
-    feed_url: http://example.com/rss.xml
-    name: Test Feed
-    gitlab_project_id: 12345
-    added_since: "2019-03-27T15:00:00Z"
-    labels:
-      - TestLabel
-   - id: feed2
-     ...
+## Modernization Updates
+
+This project has been modernized with:
+- Updated Go version to 1.22 (from non-existent Go 1.23)
+- Updated Redis client to v9 with context support
+- Updated YAML parser to v3
+- Enhanced UBI9 compatibility in the Dockerfile
+- Added comprehensive test suite
+- Implemented GitLab CI/CD pipeline with AutoDevOps
+- Added Helm chart for Kubernetes deployment
+
+## Development
+
+### Prerequisites
+
+- Go 1.22+
+- Redis
+- GitLab personal access token with API scope
+
+### Local Setup
+
+1. Clone the repository
+2. Copy `config.yaml.example` to `config.yaml` and customize
+3. Set environment variables:
+   ```
+   export GITLAB_API_BASE_URL="https://gitlab.com/api/v4"
+   export GITLAB_API_TOKEN="your-gitlab-token"
+   export CONFIG_DIR="/path/to/config/dir"
+   export REDIS_URL="localhost:6379"
+   export REDIS_PASSWORD=""
+   ```
+4. Run `go run main.go`
+
+### Testing
+
+Run the tests with:
+
 ```
-### Global
-| Attribute | Type | Required | Description                                 |
-|-----------|------|----------|---------------------------------------------|
-| interval  | int  | yes      | The interval in seconds between feed checks |
+go test -v ./...
+```
 
-### Feeds
-| Attribute         | Type   | Required | Default | Description                                                                                              |
-|-------------------|--------|----------|---------|----------------------------------------------------------------------------------------------------------|
-| id                | string | yes      | n/a     | A feed ID that is used internally for duplicate detection.                                               |
-| feed_url          | string | yes      | n/a     | The URL of the feed                                                                                      |
-| name              | string | yes      | n/a     | A User friendly display name.                                                                            |
-| gitlab_project_id | int    | yes      | n/a     | The Gitlab project ID to create issues under.                                                            |
-| added_since       | string | no       | null    | For longer RSS feeds specify a ISO 8601 DateTime to exclude items published/updated earlier than this    |
-| labels            | Array  | no       | []      | A list of labels to add to created Issues                                                                |
-| retroactive       | bool   | no       | false   | If true the issue in Gitlab will have the same creation time as the RSS feed items updates/published time|
+For test coverage:
 
-
+```
+go test -cover ./...
+```
 
 ## Docker
-A Docker image is made available on [DockerHub](https://hub.docker.com/r/adamhf/gitlabrsssync)
 
-### Required Environment Variables
-* GITLAB_API_BASE_URL - The base Gitlab URL used, needs to be set to `https://gitlab.com/api/v4` for Gitlab hosted Gitlab.
-If you are self hosting gitlab it needs to be set to your custom gitlab domain including the `/api/<API VERSION>`
-* GITLAB_API_TOKEN - Gitlab personal access token that will be used to create Issues NOTE: You must have access to create
-issues in the projects you specify in the config file.
-* CONFIG_DIR - The directory the application should look for config.yaml in.
-* REDIS_URL - The URL of the Redis host e.g. `redis:6379`
-* REDIS_PASSWORD - Password for Redis, if an empty password is required set to `REDIS_PASSWORD=`
-* USE_SENTINEL - If set the REDIS_URL will be treated as a sentinel and the current master acquired via the sentinel.
+Build and run with Docker:
 
-### Run it
-
-#### Via Docker
-```bash
-docker run -e GITLAB_API_TOKEN=<INSERT_TOKEN> -e CONFIG_DIR=/app -v REDIS_URL=<REDIS_URL> -v REDIS_PASSWORD=<REDIS_PASSWORD> -v ${PWD}:/config adamhf/rss-sync:latest
+```
+docker build -t gitlabrsssync .
+docker run -e GITLAB_API_BASE_URL=https://gitlab.com/api/v4 \
+           -e GITLAB_API_TOKEN=your-token \
+           -e CONFIG_DIR=/app \
+           -e REDIS_URL=redis:6379 \
+           -e REDIS_PASSWORD="" \
+           -v /path/to/config:/app \
+           gitlabrsssync
 ```
 
-#### Via docker-compose
-```bash
-docker-compose up
+## CI/CD Pipeline
+
+The project includes a GitLab CI/CD pipeline configuration with:
+- Testing with code coverage reporting
+- Code linting
+- Docker image building and publishing
+- Automatic deployment to Kubernetes
+
+### Pipeline Setup
+
+1. Configure GitLab CI/CD variables:
+   - `GITLAB_API_TOKEN`: Your GitLab API token
+   - `KUBE_NAMESPACE`: Kubernetes namespace for deployment
+   - `KUBE_INGRESS_BASE_DOMAIN`: Base domain for Ingress
+
+2. Set up a Kubernetes cluster in GitLab
+   - Go to your project's Operations > Kubernetes
+   - Add a Kubernetes cluster
+   - Enable Gitlab-managed cluster
+
+### Pipeline Stages
+
+- **Test**: Runs unit tests and linting
+- **Build**: Builds the application and Docker image
+- **Review**: Deploys to a review environment for feature branches
+- **Deploy**: Deploys to production (manual trigger)
+
+## Helm Chart
+
+The included Helm chart deploys:
+- The application with configurable resources
+- Redis dependency for data storage
+- Persistent volume for configuration
+
+### Chart Configuration
+
+Key values that can be configured:
+- `replicaCount`: Number of application instances
+- `image.repository`: Docker image repository
+- `image.tag`: Docker image tag
+- `env`: Environment variables for the application
+- `persistence`: Storage configuration for persistent data
+- `redis`: Redis service configuration
+
+### Installing the Chart
+
+Using Helm:
+
+```
+helm dependency update ./chart
+helm install gitlab-rss-sync ./chart \
+  --set env.GITLAB_API_TOKEN=your-token \
+  --set env.GITLAB_API_BASE_URL=https://gitlab.com/api/v4
 ```
 
-## Prometheus Metrics
-Two metrics (above and beyond what are exposed by the Go Prometheus library) are exposed on :8080/metrics
-* last_run_time - The time of the last feed checks, useful for creating alerts to check for successful runs.
-* issue_creation_total - The total number of issues created in Gitlab, useful to check for runaways.
-* issue_creation_error_total - The total number of failures of issue creation in Gitlab.
+## Maintenance
 
-## Healthz Endpoint
-A /healthz endpoint is exposed on :8081/healthz which will fail if it is unable to connect to Redis.
+To keep this application maintained:
 
-## Example Issues
-### GKE Release Notes
-Feed URL: https://cloud.google.com/feeds/kubernetes-engine-release-notes.xml
-![GKE Release Notes](screenshots/GKEReleaseNotes.png "GKE Release Notes")
-### GKE Security Updates
-Feed URL: https://cloud.google.com/feeds/kubernetes-engine-security-bulletins.xml
-![GKE Security updates](screenshots/GKESecurityUpdate.png "GKE Security updates")
+1. Regularly update dependencies with:
+   ```
+   go get -u ./...
+   go mod tidy
+   ```
+
+2. Monitor GitLab API changes that might affect the integration
+3. Run the test suite to ensure compatibility
+4. Update Helm chart versions for dependencies

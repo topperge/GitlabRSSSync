@@ -1,3 +1,64 @@
-.idea
+# Go specific
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+
+# Build and binary directories
+bin/
+/rss_sync
+/rss_gitlab_sync
+
+# Dependencies
+vendor/
+
+# IDE/Editor specific files
+.idea/
+.vscode/
+*.sublime-workspace
+*.sublime-project
+.atom/
+.eclipse/
+*.swp
+*.swo
+*~
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project specific files
 *.db
-data
+data/
+.env
+.env.*
+!.env.example
+tmp/
+config.yaml
+!config.yaml.example
+
+# Test coverage
+coverage.out
+coverage.html
+
+# Helm/Kubernetes
+chart/charts/
+chart/.helmignore
+.kube/
+kubeconfig
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+
+# Logs
+logs/
+*.log

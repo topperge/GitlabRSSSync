@@ -1,25 +1,67 @@
 version: "3"
 services:
-  app:
-    build: .
-    env_file:
-      - .env
-    depends_on:
-      - db
-    volumes:
-      - ./config.yaml:/config/config.yaml
-    command:
-      - /app/wait-for-it.sh
-      - ${REDIS_URL}
-      - --timeout=60
-      - --strict
-      - --
-      - /app/rss_sync
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-  db:
+  # Define both Redis and SQLite options 
+  
+  # Option 1: Redis backend
+  redis:
     image: 'redis:latest'
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
     restart: unless-stopped
+    volumes:
+      - redis_data:/data
+
+  # Option 2: SQLite backend with S3-compatible backup
+  # Uncomment if needed
+  # minio:
+  #   image: 'bitnami/minio:latest'
+  #   environment:
+  #     - MINIO_ROOT_USER=minio
+  #     - MINIO_ROOT_PASSWORD=minio123
+  #   volumes:
+  #     - minio_data:/data
+  #   ports:
+  #     - "9000:9000"
+  #     - "9001:9001"
+  
+  # Main application - supports both Redis and SQLite backends
+  app:
+    build: .
+    env_file:
+      - .env
+    environment:
+      # Common environment variables
+      - GITLAB_API_BASE_URL=${GITLAB_API_BASE_URL:-https://gitlab.com/api/v4}
+      - CONFIG_DIR=/config
+      
+      # Uncomment for Redis backend (default)
+      - USE_SQLITE=false
+      - REDIS_URL=${REDIS_URL:-redis:6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      
+      # Uncomment for SQLite backend
+      # - USE_SQLITE=true
+      # - DB_PATH=/data/gitlabrsssync.db
+      
+      # S3 backup configuration (optional)
+      # - S3_ENABLED=true
+      # - S3_ENDPOINT=http://minio:9000
+      # - S3_REGION=us-east-1
+      # - S3_BUCKET_NAME=gitlabrsssync
+      # - S3_ACCESS_KEY=minio
+      # - S3_SECRET_KEY=minio123
+      # - S3_BACKUP_INTERVAL=6h
+    depends_on:
+      - redis
+      # - minio  # Uncomment for S3 backups
+    volumes:
+      - ./config.yaml:/config/config.yaml
+      - data_volume:/data
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  data_volume:
+  # minio_data:  # Uncomment for S3 backups
